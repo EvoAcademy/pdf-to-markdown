@@ -1,0 +1,93 @@
+{% extends "converter/base.html" %}
+
+{% block title %}Processing - PDF to Markdown{% endblock %}
+
+{% block content %}
+<div class="max-w-lg mx-auto text-center">
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-8">
+    <!-- Spinner -->
+    <div class="flex justify-center mb-6">
+      <svg id="spinner" class="animate-spin h-12 w-12 text-indigo-600" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+        <path class="opacity-75" fill="currentColor"
+              d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z">
+        </path>
+      </svg>
+    </div>
+
+    <h1 class="text-2xl font-bold text-gray-900 mb-2">Processing your PDF</h1>
+    <p class="text-gray-500 mb-1">
+      <span class="font-medium text-gray-700">{{ task.original_filename }}</span>
+    </p>
+
+    <!-- Progress -->
+    <p id="status-text" class="text-sm text-gray-500 mb-4">Starting...</p>
+
+    <div class="w-full bg-gray-200 rounded-full h-3 mb-6 overflow-hidden">
+      <div id="progress-bar"
+           class="bg-indigo-600 h-3 rounded-full transition-all duration-500 ease-out"
+           style="width: 0%"></div>
+    </div>
+
+    <p id="page-count" class="text-xs text-gray-400"></p>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  const taskPk      = {{ task.pk }};
+  const statusUrl    = "{% url 'converter:task_status' pk=task.pk %}";
+  const resultUrl    = "{% url 'converter:result' pk=task.pk %}";
+  const statusText   = document.getElementById('status-text');
+  const progressBar  = document.getElementById('progress-bar');
+  const pageCount    = document.getElementById('page-count');
+  const spinner      = document.getElementById('spinner');
+
+  function poll() {
+    fetch(statusUrl)
+      .then(r => r.json())
+      .then(data => {
+        if (data.status === 'success') {
+          statusText.textContent = 'Done! Redirecting...';
+          progressBar.style.width = '100%';
+          spinner.classList.remove('animate-spin');
+          setTimeout(() => window.location.href = resultUrl, 500);
+          return;
+        }
+
+        if (data.status === 'failed') {
+          statusText.textContent = 'Processing failed.';
+          statusText.classList.add('text-red-600');
+          spinner.classList.add('hidden');
+          if (data.error_message) {
+            pageCount.textContent = data.error_message;
+            pageCount.classList.add('text-red-500');
+          }
+          // Still redirect to result page to show full error
+          setTimeout(() => window.location.href = resultUrl, 2000);
+          return;
+        }
+
+        // Processing in progress
+        if (data.page_count && data.page_count > 0) {
+          const pct = Math.round((data.pages_processed / data.page_count) * 100);
+          progressBar.style.width = pct + '%';
+          statusText.textContent = `Processing page ${data.pages_processed} of ${data.page_count}...`;
+          pageCount.textContent = `${pct}% complete`;
+        } else if (data.pages_processed > 0) {
+          statusText.textContent = `Processed ${data.pages_processed} page(s)...`;
+        } else {
+          statusText.textContent = 'Converting PDF pages to images...';
+        }
+
+        setTimeout(poll, 2000);
+      })
+      .catch(() => {
+        setTimeout(poll, 3000);
+      });
+  }
+
+  poll();
+</script>
+{% endblock %}

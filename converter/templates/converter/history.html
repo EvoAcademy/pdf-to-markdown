@@ -1,0 +1,105 @@
+{% extends "converter/base.html" %}
+
+{% block title %}History - PDF to Markdown{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <div class="flex items-center justify-between">
+    <h1 class="text-2xl font-bold text-gray-900">Conversion History</h1>
+    <a href="{% url 'converter:index' %}"
+       class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold
+              rounded-lg shadow-sm hover:bg-indigo-700 transition-colors">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/>
+      </svg>
+      New Conversion
+    </a>
+  </div>
+
+  {% if tasks %}
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <table class="min-w-full divide-y divide-gray-200">
+      <thead class="bg-gray-50">
+        <tr>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">File</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Status</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">Pages</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden sm:table-cell">Time</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider hidden md:table-cell">Backend</th>
+          <th class="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">Date</th>
+          <th class="px-6 py-3 text-right text-xs font-medium text-gray-500 uppercase tracking-wider">Actions</th>
+        </tr>
+      </thead>
+      <tbody class="divide-y divide-gray-200">
+        {% for task in tasks %}
+        <tr class="hover:bg-gray-50 transition-colors">
+          <td class="px-6 py-4 text-sm font-medium text-gray-900 max-w-[200px] truncate">
+            {{ task.original_filename }}
+          </td>
+          <td class="px-6 py-4 whitespace-nowrap">
+            {% if task.status == "success" %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+                Success
+              </span>
+            {% elif task.status == "failed" %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+                Failed
+              </span>
+            {% elif task.status == "processing" %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                Processing
+              </span>
+            {% else %}
+              <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+                Pending
+              </span>
+            {% endif %}
+          </td>
+          <td class="px-6 py-4 text-sm text-gray-500 hidden sm:table-cell">
+            {% if task.page_count %}{{ task.pages_processed }}/{{ task.page_count }}{% else %}&mdash;{% endif %}
+          </td>
+          <td class="px-6 py-4 text-sm text-gray-500 hidden sm:table-cell">
+            {% if task.processing_time_seconds %}{{ task.processing_time_seconds|floatformat:1 }}s{% else %}&mdash;{% endif %}
+          </td>
+          <td class="px-6 py-4 text-sm text-gray-500 hidden md:table-cell">
+            {% if task.vision_backend %}{{ task.vision_backend }}{% else %}&mdash;{% endif %}
+          </td>
+          <td class="px-6 py-4 text-sm text-gray-500 whitespace-nowrap">
+            {{ task.created_at|date:"M d, Y H:i" }}
+          </td>
+          <td class="px-6 py-4 text-right text-sm whitespace-nowrap space-x-2">
+            {% if task.status == "success" %}
+              <a href="{% url 'converter:result' pk=task.pk %}"
+                 class="text-indigo-600 hover:text-indigo-800 font-medium">View</a>
+              <a href="{% url 'converter:download' pk=task.pk %}"
+                 class="text-gray-500 hover:text-gray-700 font-medium">Download</a>
+            {% elif task.status == "processing" %}
+              <a href="{% url 'converter:processing' pk=task.pk %}"
+                 class="text-blue-600 hover:text-blue-800 font-medium">Progress</a>
+            {% elif task.status == "failed" %}
+              <a href="{% url 'converter:result' pk=task.pk %}"
+                 class="text-red-600 hover:text-red-800 font-medium">Details</a>
+            {% endif %}
+          </td>
+        </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% else %}
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 p-12 text-center">
+    <svg class="mx-auto h-12 w-12 text-gray-400 mb-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+            d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/>
+    </svg>
+    <h3 class="text-lg font-medium text-gray-900 mb-1">No conversions yet</h3>
+    <p class="text-gray-500 mb-4">Upload your first PDF to get started.</p>
+    <a href="{% url 'converter:index' %}"
+       class="inline-flex items-center gap-2 px-4 py-2 bg-indigo-600 text-white text-sm font-semibold
+              rounded-lg shadow-sm hover:bg-indigo-700 transition-colors">
+      Upload PDF
+    </a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}

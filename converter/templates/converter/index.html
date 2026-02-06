@@ -1,0 +1,113 @@
+{% extends "converter/base.html" %}
+
+{% block title %}Upload PDF - PDF to Markdown{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <div class="text-center mb-8">
+    <h1 class="text-3xl font-bold text-gray-900 mb-2">Convert PDF to Markdown</h1>
+    <p class="text-gray-500">Upload a PDF document and get a clean Markdown transcription powered by AI vision.</p>
+  </div>
+
+  <form method="post" enctype="multipart/form-data" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
+    {% csrf_token %}
+
+    <!-- PDF Upload -->
+    <div>
+      <label for="id_pdf_file" class="block text-sm font-medium text-gray-700 mb-1">
+        {{ form.pdf_file.label }}
+      </label>
+      <div id="drop-zone"
+           class="border-2 border-dashed border-gray-300 rounded-lg p-8 text-center hover:border-indigo-400 transition-colors cursor-pointer">
+        <svg class="mx-auto h-12 w-12 text-gray-400 mb-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+                d="M7 16a4 4 0 01-.88-7.903A5 5 0 1115.9 6L16 6a5 5 0 011 9.9M15 13l-3-3m0 0l-3 3m3-3v12"/>
+        </svg>
+        <p class="text-sm text-gray-600 mb-2">
+          <span class="font-semibold text-indigo-600">Click to upload</span> or drag and drop
+        </p>
+        <p class="text-xs text-gray-400">PDF files only (max {{ form.pdf_file.help_text }})</p>
+        {{ form.pdf_file }}
+        <p id="file-name" class="mt-2 text-sm font-medium text-indigo-600 hidden"></p>
+      </div>
+      {% if form.pdf_file.errors %}
+      <p class="mt-1 text-sm text-red-600">{{ form.pdf_file.errors.0 }}</p>
+      {% endif %}
+    </div>
+
+    <!-- Prompt -->
+    <div>
+      <label for="id_prompt" class="block text-sm font-medium text-gray-700 mb-1">
+        {{ form.prompt.label }}
+      </label>
+      {{ form.prompt }}
+      <p class="mt-1 text-xs text-gray-400">Customize the instructions sent to the AI for each page.</p>
+      {% if form.prompt.errors %}
+      <p class="mt-1 text-sm text-red-600">{{ form.prompt.errors.0 }}</p>
+      {% endif %}
+    </div>
+
+    <!-- Max Pages -->
+    <div>
+      <label for="id_max_pages" class="block text-sm font-medium text-gray-700 mb-1">
+        {{ form.max_pages.label }}
+      </label>
+      <div class="flex items-center gap-3">
+        {{ form.max_pages }}
+        <span class="text-xs text-gray-400">{{ form.max_pages.help_text }}</span>
+      </div>
+      {% if form.max_pages.errors %}
+      <p class="mt-1 text-sm text-red-600">{{ form.max_pages.errors.0 }}</p>
+      {% endif %}
+    </div>
+
+    <!-- Submit -->
+    <button type="submit"
+            class="w-full py-3 px-4 bg-indigo-600 text-white font-semibold rounded-lg shadow-sm
+                   hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500
+                   focus:ring-offset-2 transition-colors">
+      Convert to Markdown
+    </button>
+  </form>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  // Drag-and-drop enhancement
+  const dropZone = document.getElementById('drop-zone');
+  const fileInput = document.getElementById('id_pdf_file');
+  const fileName  = document.getElementById('file-name');
+
+  dropZone.addEventListener('click', () => fileInput.click());
+
+  dropZone.addEventListener('dragover', (e) => {
+    e.preventDefault();
+    dropZone.classList.add('border-indigo-400', 'bg-indigo-50');
+  });
+
+  dropZone.addEventListener('dragleave', () => {
+    dropZone.classList.remove('border-indigo-400', 'bg-indigo-50');
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    e.preventDefault();
+    dropZone.classList.remove('border-indigo-400', 'bg-indigo-50');
+    if (e.dataTransfer.files.length) {
+      fileInput.files = e.dataTransfer.files;
+      showFileName(e.dataTransfer.files[0].name);
+    }
+  });
+
+  fileInput.addEventListener('change', () => {
+    if (fileInput.files.length) {
+      showFileName(fileInput.files[0].name);
+    }
+  });
+
+  function showFileName(name) {
+    fileName.textContent = name;
+    fileName.classList.remove('hidden');
+  }
+</script>
+{% endblock %}

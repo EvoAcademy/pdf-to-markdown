@@ -1,0 +1,131 @@
+{% extends "converter/base.html" %}
+
+{% block title %}Result - {{ task.original_filename }}{% endblock %}
+
+{% block content %}
+<div class="space-y-6">
+  <!-- Header -->
+  <div class="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+    <div>
+      <h1 class="text-2xl font-bold text-gray-900">{{ task.original_filename }}</h1>
+      <div class="flex flex-wrap items-center gap-3 mt-1 text-sm text-gray-500">
+        {% if task.status == "success" %}
+          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
+            Success
+          </span>
+        {% elif task.status == "failed" %}
+          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
+            Failed
+          </span>
+        {% else %}
+          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
+            {{ task.get_status_display }}
+          </span>
+        {% endif %}
+
+        {% if task.page_count %}
+          <span>{{ task.page_count }} page{{ task.page_count|pluralize }}</span>
+        {% endif %}
+
+        {% if task.processing_time_seconds %}
+          <span>{{ task.processing_time_seconds|floatformat:1 }}s</span>
+        {% endif %}
+
+        {% if task.vision_backend %}
+          <span>{{ task.vision_backend }} / {{ task.vision_model }}</span>
+        {% endif %}
+      </div>
+    </div>
+
+    {% if task.status == "success" and task.markdown_file %}
+    <a href="{% url 'converter:download' pk=task.pk %}"
+       class="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white font-semibold
+              rounded-lg shadow-sm hover:bg-indigo-700 transition-colors text-sm">
+      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+      </svg>
+      Download .md
+    </a>
+    {% endif %}
+  </div>
+
+  {% if task.status == "failed" %}
+  <!-- Error -->
+  <div class="bg-red-50 border border-red-200 rounded-xl p-6">
+    <h2 class="text-lg font-semibold text-red-800 mb-2">Processing Failed</h2>
+    <p class="text-sm text-red-700 whitespace-pre-wrap">{{ task.error_message }}</p>
+  </div>
+  {% endif %}
+
+  {% if task.status == "success" and markdown_html %}
+  <!-- Tab switcher -->
+  <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
+    <div class="border-b border-gray-200">
+      <nav class="flex -mb-px">
+        <button onclick="showTab('preview')" id="tab-preview"
+                class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-indigo-500 text-indigo-600">
+          Preview
+        </button>
+        <button onclick="showTab('raw')" id="tab-raw"
+                class="tab-btn px-6 py-3 text-sm font-medium border-b-2 border-transparent text-gray-500 hover:text-gray-700">
+          Raw Markdown
+        </button>
+      </nav>
+    </div>
+
+    <!-- Preview -->
+    <div id="panel-preview" class="p-6 prose max-w-none">
+      {{ markdown_html|safe }}
+    </div>
+
+    <!-- Raw -->
+    <div id="panel-raw" class="p-6 hidden">
+      <div class="relative">
+        <button onclick="copyRaw()"
+                class="absolute top-2 right-2 px-3 py-1 text-xs font-medium bg-gray-100 hover:bg-gray-200
+                       rounded-md text-gray-600 transition-colors">
+          Copy
+        </button>
+        <pre class="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-800 overflow-x-auto whitespace-pre-wrap">{{ markdown_raw }}</pre>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <!-- Back links -->
+  <div class="flex gap-4 text-sm">
+    <a href="{% url 'converter:index' %}" class="text-indigo-600 hover:text-indigo-800 font-medium">
+      &larr; Convert another PDF
+    </a>
+    <a href="{% url 'converter:history' %}" class="text-gray-500 hover:text-gray-700 font-medium">
+      View history
+    </a>
+  </div>
+</div>
+{% endblock %}
+
+{% block extra_js %}
+<script>
+  function showTab(name) {
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.remove('border-indigo-500', 'text-indigo-600');
+      btn.classList.add('border-transparent', 'text-gray-500');
+    });
+    document.getElementById('tab-' + name).classList.add('border-indigo-500', 'text-indigo-600');
+    document.getElementById('tab-' + name).classList.remove('border-transparent', 'text-gray-500');
+
+    document.getElementById('panel-preview').classList.toggle('hidden', name !== 'preview');
+    document.getElementById('panel-raw').classList.toggle('hidden', name !== 'raw');
+  }
+
+  function copyRaw() {
+    const raw = document.querySelector('#panel-raw pre').textContent;
+    navigator.clipboard.writeText(raw).then(() => {
+      const btn = document.querySelector('#panel-raw button');
+      btn.textContent = 'Copied!';
+      setTimeout(() => btn.textContent = 'Copy', 2000);
+    });
+  }
+</script>
+{% endblock %}
