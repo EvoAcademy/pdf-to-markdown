@@ -16,6 +16,11 @@
     </div>
 
     <h1 class="text-2xl font-bold text-gray-900 mb-2">Processing your PDF</h1>
+    {% if is_openai %}
+    <p class="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+      GPT models can be slower than Gemini's. Please be patient.
+    </p>
+    {% endif %}
     <p class="text-gray-500 mb-1">
       <span class="font-medium text-gray-700">{{ task.original_filename }}</span>
     </p>
@@ -56,6 +61,15 @@
           return;
         }
 
+        if (data.status === 'partial_success') {
+          statusText.textContent = 'Done (some pages failed). Redirecting...';
+          statusText.classList.add('text-yellow-600');
+          progressBar.style.width = '100%';
+          spinner.classList.remove('animate-spin');
+          setTimeout(() => window.location.href = resultUrl, 500);
+          return;
+        }
+
         if (data.status === 'failed') {
           statusText.textContent = 'Processing failed.';
           statusText.classList.add('text-red-600');
@@ -73,7 +87,8 @@
         if (data.page_count && data.page_count > 0) {
           const pct = Math.round((data.pages_processed / data.page_count) * 100);
           progressBar.style.width = pct + '%';
-          statusText.textContent = `Processing page ${data.pages_processed} of ${data.page_count}...`;
+          const currentPage = Math.min(data.pages_processed + 1, data.page_count);
+          statusText.textContent = `Processing page ${currentPage} of ${data.page_count}...`;
           pageCount.textContent = `${pct}% complete`;
         } else if (data.pages_processed > 0) {
           statusText.textContent = `Processed ${data.pages_processed} page(s)...`;

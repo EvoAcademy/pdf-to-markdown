@@ -8,26 +8,45 @@ import pymupdf
 logger = logging.getLogger(__name__)
 
 
-def pdf_to_base64_images(pdf_path: str, max_pages: int = 0) -> tuple[list[str], int]:
-    """Open *pdf_path*, render each page to PNG and return base64 strings.
+def pdf_to_base64_images(
+    pdf_path: str,
+    start_page: int = 1,
+    end_page: int = 0,
+) -> tuple[list[str], int]:
+    """Open *pdf_path*, render selected pages to PNG and return base64 strings.
 
     Args:
         pdf_path: Filesystem path to the PDF.
-        max_pages: Maximum number of pages to process. 0 means all pages.
+        start_page: First page to process (1-based). Defaults to 1.
+        end_page: Last page to process (1-based). 0 means the last page
+            of the document.
 
     Returns:
         A tuple of (list_of_base64_strings, total_pages_processed).
     """
     doc = pymupdf.open(pdf_path)
-    total = len(doc)
+    total_doc_pages = len(doc)
 
-    if max_pages > 0:
-        total = min(max_pages, total)
+    # Clamp to valid range (convert 1-based to 0-based)
+    first = max(start_page - 1, 0)
+    last = total_doc_pages if end_page <= 0 else min(end_page, total_doc_pages)
 
-    logger.info("Converting %d page(s) from %s", total, pdf_path)
+    if first >= last:
+        first = 0
+        last = total_doc_pages
+
+    pages_to_process = last - first
+
+    logger.info(
+        "Converting page %d–%d (%d page(s)) from %s",
+        first + 1,
+        last,
+        pages_to_process,
+        pdf_path,
+    )
 
     images: list[str] = []
-    for i in range(total):
+    for i in range(first, last):
         page = doc.load_page(i)
         pix = page.get_pixmap()
         # Direct PNG bytes from pixmap — no temp files, no PIL needed
@@ -36,4 +55,4 @@ def pdf_to_base64_images(pdf_path: str, max_pages: int = 0) -> tuple[list[str], 
 
     doc.close()
     logger.info("Converted %d page(s) to base64 images", len(images))
-    return images, total
+    return images, pages_to_process

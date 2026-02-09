@@ -1,0 +1,90 @@
+{% extends "converter/base.html" %}
+
+{% block title %}Settings - PDF to Markdown{% endblock %}
+
+{% block content %}
+<div class="max-w-2xl mx-auto">
+  <div class="mb-8">
+    <h1 class="text-3xl font-bold text-gray-900 mb-2">Settings</h1>
+    <p class="text-gray-500">Choose which vision model to use for PDF transcription. These override environment variables when set.</p>
+  </div>
+
+  <form method="post" class="bg-white rounded-xl shadow-sm border border-gray-200 p-6 space-y-6">
+    {% csrf_token %}
+
+    <!-- Backend -->
+    <div>
+      <label for="id_vision_backend" class="block text-sm font-medium text-gray-700 mb-1">
+        {{ form.vision_backend.label }}
+      </label>
+      {{ form.vision_backend }}
+      <p class="mt-1 text-xs text-gray-400">Leave as "Use environment default" to use VISION_BACKEND from .env.</p>
+      {% if form.vision_backend.errors %}
+      <p class="mt-1 text-sm text-red-600">{{ form.vision_backend.errors.0 }}</p>
+      {% endif %}
+    </div>
+
+    <!-- OpenAI model -->
+    <div class="space-y-2">
+      <label for="id_openai_model" class="block text-sm font-medium text-gray-700">
+        {{ form.openai_model.label }}
+      </label>
+      {{ form.openai_model }}
+      <div id="openai-custom-wrap" class="mt-2 hidden">
+        {{ form.openai_model_custom }}
+      </div>
+      {% if form.openai_model.errors %}
+      <p class="text-sm text-red-600">{{ form.openai_model.errors.0 }}</p>
+      {% endif %}
+      {% if form.openai_model_custom.errors %}
+      <p class="text-sm text-red-600">{{ form.openai_model_custom.errors.0 }}</p>
+      {% endif %}
+    </div>
+
+    <!-- Gemini model -->
+    <div class="space-y-2">
+      <label for="id_gemini_model" class="block text-sm font-medium text-gray-700">
+        {{ form.gemini_model.label }}
+      </label>
+      {{ form.gemini_model }}
+      <div id="gemini-custom-wrap" class="mt-2 hidden">
+        {{ form.gemini_model_custom }}
+      </div>
+      {% if form.gemini_model.errors %}
+      <p class="text-sm text-red-600">{{ form.gemini_model.errors.0 }}</p>
+      {% endif %}
+      {% if form.gemini_model_custom.errors %}
+      <p class="text-sm text-red-600">{{ form.gemini_model_custom.errors.0 }}</p>
+      {% endif %}
+    </div>
+
+    <button type="submit"
+            class="w-full py-3 px-4 bg-indigo-600 text-white font-semibold rounded-lg shadow-sm
+                   hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-indigo-500
+                   focus:ring-offset-2 transition-colors">
+      Save settings
+    </button>
+  </form>
+</div>
+
+<script>
+  (function() {
+    var openaiSelect = document.getElementById('id_openai_model');
+    var openaiCustom = document.getElementById('openai-custom-wrap');
+    var geminiSelect = document.getElementById('id_gemini_model');
+    var geminiCustom = document.getElementById('gemini-custom-wrap');
+
+    function toggleOpenai() {
+      openaiCustom.classList.toggle('hidden', openaiSelect.value !== 'custom');
+    }
+    function toggleGemini() {
+      geminiCustom.classList.toggle('hidden', geminiSelect.value !== 'custom');
+    }
+
+    openaiSelect.addEventListener('change', toggleOpenai);
+    geminiSelect.addEventListener('change', toggleGemini);
+    toggleOpenai();
+    toggleGemini();
+  })();
+</script>
+{% endblock %}

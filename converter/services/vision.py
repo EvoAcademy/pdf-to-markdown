@@ -11,7 +11,12 @@ import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from typing import Callable, Optional
 
+# Placeholder string for a failed page (must match processing/views logic)
+FAILED_PAGE_PLACEHOLDER_TEMPLATE = "<!-- [Page {}: transcription failed] -->"
+
 from django.conf import settings
+
+from converter.models import get_effective_vision_config
 
 logger = logging.getLogger(__name__)
 
@@ -23,62 +28,93 @@ def transcribe_images_to_markdown(
     base64_images: list[str],
     prompt: str,
     on_page_done: Optional[Callable[[int], None]] = None,
-) -> str:
-    """Transcribe a list of base64 page images to a single Markdown string.
+    failed_pages: Optional[list[dict]] = None,
+    indices_to_process: Optional[list[int]] = None,
+) -> tuple[str | None, list[str]]:
+    """Transcribe page images to Markdown, optionally only a subset of indices.
 
     Args:
         base64_images: List of base64-encoded PNG strings (one per page).
         prompt: The transcription prompt to send with each image.
         on_page_done: Optional callback invoked with the page index (0-based)
             each time a page finishes.
+        failed_pages: Optional mutable list; each failed page appends
+            {"page": 1-based index, "error": exception message}.
+        indices_to_process: If set, only these 0-based indices are transcribed
+            (for retrying failed pages). Returned list has one entry per index
+            in this list, in order.
 
     Returns:
-        Concatenated Markdown string for all pages.
+        (full_markdown, page_results):
+        - If indices_to_process is None: full_markdown is the concatenated
+          string, page_results has length len(base64_images).
+        - If indices_to_process is set: full_markdown is None, page_results
+          has length len(indices_to_process) (results for those indices only).
     """
-    backend = settings.VISION_BACKEND.lower()
+    backend, openai_model, gemini_model = get_effective_vision_config()
     max_workers = getattr(settings, "VISION_MAX_WORKERS", 4)
 
     if backend == "openai":
         transcribe_fn = _openai_transcribe_page
-        model = settings.OPENAI_VISION_MODEL
+        model = openai_model
     elif backend == "gemini":
         transcribe_fn = _gemini_transcribe_page
-        model = settings.GEMINI_VISION_MODEL
+        model = gemini_model
     else:
         raise ValueError(f"Unknown VISION_BACKEND: {backend!r}")
 
+    if indices_to_process is not None:
+        indices_to_process = sorted(set(indices_to_process))
+        image_subset = [base64_images[i] for i in indices_to_process]
+        n_results = len(indices_to_process)
+        idx_to_subset_pos = {idx: pos for pos, idx in enumerate(indices_to_process)}
+    else:
+        image_subset = base64_images
+        indices_to_process = list(range(len(base64_images)))
+        n_results = len(base64_images)
+        idx_to_subset_pos = {i: i for i in range(n_results)}
+
     logger.info(
         "Transcribing %d page(s) via %s / %s (workers=%d)",
-        len(base64_images),
+        n_results,
         backend,
         model,
         max_workers,
     )
 
-    # Pre-allocate results list to maintain page order
-    results: list[str | None] = [None] * len(base64_images)
+    results: list[str | None] = [None] * n_results
 
     with ThreadPoolExecutor(max_workers=max_workers) as pool:
         future_to_idx = {
-            pool.submit(transcribe_fn, img, prompt, model): idx
-            for idx, img in enumerate(base64_images)
+            pool.submit(transcribe_fn, img, prompt, model): indices_to_process[pos]
+            for pos, img in enumerate(image_subset)
         }
 
         for future in as_completed(future_to_idx):
             idx = future_to_idx[future]
+            pos = idx_to_subset_pos[idx]
+            page_num = idx + 1
             try:
-                results[idx] = future.result()
-            except Exception:
-                logger.exception("Page %d transcription failed", idx + 1)
-                results[idx] = (
-                    f"\n\n<!-- [Page {idx + 1}: transcription failed] -->\n\n"
+                results[pos] = future.result()
+            except Exception as exc:
+                err_msg = str(exc) or type(exc).__name__
+                logger.exception("Page %d transcription failed", page_num)
+                if failed_pages is not None:
+                    failed_pages.append({"page": page_num, "error": err_msg})
+                results[pos] = (
+                    "\n\n"
+                    + FAILED_PAGE_PLACEHOLDER_TEMPLATE.format(page_num)
+                    + "\n\n"
                 )
 
             if on_page_done is not None:
                 on_page_done(idx)
 
-    # Join pages with double newline separators
-    return "\n\n".join(r for r in results if r is not None)
+    page_results_list = [r for r in results if r is not None]
+    full_markdown = "\n\n".join(page_results_list) if page_results_list else ""
+    if indices_to_process is None or len(indices_to_process) == len(base64_images):
+        return (full_markdown, list(results))
+    return (None, list(results))
 
 
 # ── OpenAI backend ────────────────────────────────────────────
@@ -125,23 +161,19 @@ def _openai_transcribe_page(base64_image: str, prompt: str, model: str) -> str:
 
 def _gemini_transcribe_page(base64_image: str, prompt: str, model: str) -> str:
     """Transcribe a single page image using the Google Gemini API."""
-    import base64 as b64_mod
+    import base64
+    import io
 
-    import google.generativeai as genai
+    from google import genai
+    from PIL import Image
 
-    genai.configure(api_key=settings.GEMINI_API_KEY)
-    gen_model = genai.GenerativeModel(model)
+    client = genai.Client(api_key=settings.GEMINI_API_KEY)
+    image_bytes = base64.b64decode(base64_image)
+    pil_image = Image.open(io.BytesIO(image_bytes))
 
-    image_bytes = b64_mod.b64decode(base64_image)
-
-    response = gen_model.generate_content(
-        [
-            prompt,
-            {
-                "mime_type": "image/png",
-                "data": image_bytes,
-            },
-        ]
+    response = client.models.generate_content(
+        model=model,
+        contents=[prompt, pil_image],
     )
 
     return response.text

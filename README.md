@@ -4,13 +4,14 @@ A Django web application that converts PDF documents to Markdown using AI vision
 
 ## Features
 
-- **Drag-and-drop PDF upload** with configurable size and page limits
-- **Dual vision backends** — OpenAI (e.g. `gpt-4o-mini`) and Google Gemini (e.g. `gemini-2.0-flash`), switchable via environment variable
+- **Drag-and-drop PDF upload** with configurable size and page range (start/end page)
+- **Dual vision backends** — OpenAI and Google Gemini, switchable via environment or in-app **Settings**
 - **Editable transcription prompt** per conversion
 - **Background processing** with real-time progress bar (no HTTP timeouts)
 - **Concurrent API calls** — pages are transcribed in parallel via `ThreadPoolExecutor`
 - **Rendered Markdown preview** with Preview / Raw tab switcher
-- **Conversion history** with status badges, timing, and download links
+- **Conversion history** with search, bulk delete, status badges (including “Partially OK”), and download links (PDF + .md)
+- **Retry failed pages** — For partial runs, retry only the pages that failed transcription
 - **Cleanup management command** to purge old tasks and files
 
 ## Quick Start
@@ -94,6 +95,7 @@ pdf_to_markdown/
 - [Architecture](docs/architecture.md) — system design, data flow, and processing pipeline
 - [Configuration](docs/configuration.md) — full environment variable reference
 - [API & URL Reference](docs/api.md) — all routes, views, and the JSON status endpoint
+- [Changelog](CHANGELOG.md) — version history and breaking changes
 
 ## Management Commands
 

@@ -10,10 +10,9 @@ import logging
 import threading
 import time
 
-from django.conf import settings
 from django.core.files.base import ContentFile
 
-from converter.models import ConversionTask
+from converter.models import ConversionTask, get_effective_vision_config
 
 from .pdf_to_images import pdf_to_base64_images
 from .vision import transcribe_images_to_markdown
@@ -21,23 +20,32 @@ from .vision import transcribe_images_to_markdown
 logger = logging.getLogger(__name__)
 
 
-def start_processing(task_id: int) -> None:
-    """Spawn a daemon thread that runs the full conversion pipeline."""
+def start_processing(task_id: int, retry_failed_only: bool = False) -> None:
+    """Spawn a daemon thread that runs the conversion pipeline.
+
+    If retry_failed_only is True and the task has page_results and failed_pages,
+    only the failed pages are re-transcribed and results are merged; otherwise
+    a full run is performed.
+    """
     thread = threading.Thread(
         target=_process_task,
-        args=(task_id,),
+        args=(task_id, retry_failed_only),
         daemon=True,
         name=f"converter-task-{task_id}",
     )
     thread.start()
-    logger.info("Started background thread for task %d", task_id)
+    logger.info(
+        "Started background thread for task %d (retry_failed_only=%s)",
+        task_id,
+        retry_failed_only,
+    )
 
 
-def _process_task(task_id: int) -> None:
-    """Execute the full pipeline: PDF -> images -> vision API -> .md file.
+def _process_task(task_id: int, retry_failed_only: bool = False) -> None:
+    """Execute the pipeline: PDF -> images -> vision API -> .md file.
 
-    Updates the ConversionTask record in the DB as it progresses so the
-    polling endpoint can relay status to the browser.
+    If retry_failed_only is True and the task has page_results and failed_pages,
+    only failed pages are re-transcribed and merged into existing page_results.
     """
     try:
         task = ConversionTask.objects.get(pk=task_id)
@@ -45,50 +53,100 @@ def _process_task(task_id: int) -> None:
         logger.error("Task %d not found — aborting", task_id)
         return
 
+    backend, openai_model, gemini_model = get_effective_vision_config()
     task.status = ConversionTask.Status.PROCESSING
-    task.vision_backend = settings.VISION_BACKEND
-    task.vision_model = (
-        settings.OPENAI_VISION_MODEL
-        if settings.VISION_BACKEND == "openai"
-        else settings.GEMINI_VISION_MODEL
-    )
+    task.vision_backend = backend
+    task.vision_model = openai_model if backend == "openai" else gemini_model
     task.save(update_fields=["status", "vision_backend", "vision_model"])
 
     start = time.time()
 
     try:
         # 1. PDF -> base64 images
-        max_pages = task.max_pages or settings.MAX_PDF_PAGES
-        images, page_count = pdf_to_base64_images(task.pdf_file.path, max_pages)
+        images, page_count = pdf_to_base64_images(
+            task.pdf_file.path,
+            start_page=task.start_page,
+            end_page=task.end_page,
+        )
         task.page_count = page_count
         task.save(update_fields=["page_count"])
 
-        # 2. Vision API -> Markdown (concurrent, with progress updates)
-        markdown_text = transcribe_images_to_markdown(
-            images,
-            task.prompt,
-            on_page_done=_make_progress_callback(task_id),
-        )
+        failed_indices: list[int] | None = None
+        page_results: list[str] = list(getattr(task, "page_results", None) or [])
 
-        # 3. Save Markdown file
-        safe_name = (
-            task.original_filename.rsplit(".", 1)[0][:200] + ".md"
-        )
+        if retry_failed_only and page_results and getattr(task, "failed_pages", None):
+            failed_pages_prev = task.failed_pages or []
+            if failed_pages_prev and len(page_results) == len(images):
+                failed_indices = [fp["page"] - 1 for fp in failed_pages_prev]
+                failed_indices = [i for i in failed_indices if 0 <= i < len(images)]
+
+        if failed_indices:
+            # Retry only failed pages
+            initial_processed = len(images) - len(failed_indices)
+            task.pages_processed = initial_processed
+            task.save(update_fields=["pages_processed"])
+            failed_pages = []
+            _, subset_results = transcribe_images_to_markdown(
+                images,
+                task.prompt,
+                on_page_done=_make_progress_callback(task_id, initial=initial_processed),
+                failed_pages=failed_pages,
+                indices_to_process=failed_indices,
+            )
+            for i, idx in enumerate(failed_indices):
+                if i < len(subset_results):
+                    page_results[idx] = subset_results[i]
+            markdown_text = "\n\n".join(page_results)
+        else:
+            # Full run
+            failed_pages = []
+            markdown_text, page_results = transcribe_images_to_markdown(
+                images,
+                task.prompt,
+                on_page_done=_make_progress_callback(task_id),
+                failed_pages=failed_pages,
+            )
+
+        # 3. Save Markdown file and per-page results
         task.markdown_file.save(
-            safe_name,
+            task.markdown_filename,
             ContentFile(markdown_text.encode("utf-8")),
             save=False,
         )
 
-        task.status = ConversionTask.Status.SUCCESS
         task.processing_time_seconds = time.time() - start
-        task.save(
-            update_fields=[
-                "markdown_file",
-                "status",
-                "processing_time_seconds",
-            ]
-        )
+        task.failed_pages = failed_pages
+        task.page_results = page_results
+
+        # Document status: all pages failed -> FAILED; some failed -> Partially OK
+        total_pages = len(images)
+        if total_pages and len(failed_pages) >= total_pages:
+            task.status = ConversionTask.Status.FAILED
+            task.error_message = "All pages failed transcription."
+            task.save(
+                update_fields=[
+                    "markdown_file",
+                    "status",
+                    "error_message",
+                    "processing_time_seconds",
+                    "failed_pages",
+                    "page_results",
+                ]
+            )
+        else:
+            if failed_pages:
+                task.status = ConversionTask.Status.PARTIAL_SUCCESS
+            else:
+                task.status = ConversionTask.Status.SUCCESS
+            task.save(
+                update_fields=[
+                    "markdown_file",
+                    "status",
+                    "processing_time_seconds",
+                    "failed_pages",
+                    "page_results",
+                ]
+            )
         logger.info("Task %d completed in %.1fs", task_id, task.processing_time_seconds)
 
     except Exception as exc:
@@ -101,8 +159,8 @@ def _process_task(task_id: int) -> None:
         )
 
 
-def _make_progress_callback(task_id: int):
-    """Return a thread-safe callback that increments pages_processed."""
+def _make_progress_callback(task_id: int, initial: int = 0):
+    """Return a thread-safe callback that sets pages_processed = initial + n."""
     lock = threading.Lock()
     counter = {"n": 0}
 
@@ -110,7 +168,7 @@ def _make_progress_callback(task_id: int):
         with lock:
             counter["n"] += 1
             ConversionTask.objects.filter(pk=task_id).update(
-                pages_processed=counter["n"]
+                pages_processed=initial + counter["n"]
             )
 
     return callback

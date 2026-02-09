@@ -11,9 +11,13 @@ All routes are defined in `converter/urls.py` under the `converter` namespace.
 | GET | `/processing/<pk>/` | `processing` | `converter:processing` | Processing page with progress bar |
 | GET | `/api/status/<pk>/` | `task_status` | `converter:task_status` | JSON status endpoint (for polling) |
 | GET | `/result/<pk>/` | `result` | `converter:result` | Result page with Markdown preview |
+| GET | `/retry/<pk>/` | `retry_task` | `converter:retry_task` | Retry failed pages (or full conversion); redirect to processing |
 | GET | `/download/<pk>/` | `download` | `converter:download` | Download the `.md` file |
-| GET | `/history/` | `history` | `converter:history` | List all conversion tasks |
-| — | `/admin/` | Django admin | — | Admin interface for ConversionTask |
+| GET | `/download-pdf/<pk>/` | `download_pdf` | `converter:download_pdf` | Download the original PDF |
+| GET | `/history/` | `history` | `converter:history` | List all conversion tasks (optional `?q=` search) |
+| POST | `/history/bulk-delete/` | `history_bulk_delete` | `converter:history_bulk_delete` | Delete selected tasks |
+| GET | `/settings/` | `settings_view` | `converter:settings` | Vision backend and model overrides |
+| — | `/admin/` | Django admin | — | Admin interface for ConversionTask, AppSettings |
 
 ## Upload (POST `/`)
 
@@ -23,7 +27,8 @@ Submit a multipart form with these fields:
 |---|---|---|---|
 | `pdf_file` | File | Yes | The PDF file to convert. Must have a `.pdf` extension and be within the configured size limit. |
 | `prompt` | Text | Yes | The transcription prompt sent to the vision model for each page. Pre-filled with the default prompt. |
-| `max_pages` | Integer | No | Maximum number of pages to process. `0` or empty means all pages. |
+| `start_page` | Integer | No | First page to process (1-based). Default 1. |
+| `end_page` | Integer | No | Last page to process (1-based). `0` or empty means the last page of the document. |
 
 On success, the server creates a `ConversionTask`, starts background processing, and redirects to `/processing/<pk>/`.
 
@@ -48,7 +53,7 @@ Returns the current state of a task as JSON. This endpoint is polled by the proc
 
 | Field | Type | Description |
 |---|---|---|
-| `status` | string | One of: `pending`, `processing`, `success`, `failed` |
+| `status` | string | One of: `pending`, `processing`, `success`, `partial_success`, `failed` |
 | `page_count` | integer or null | Total pages in the PDF (null if not yet determined) |
 | `pages_processed` | integer | Number of pages transcribed so far |
 | `error_message` | string | Error details when `status` is `failed`; empty otherwise |
@@ -57,6 +62,7 @@ Returns the current state of a task as JSON. This endpoint is polled by the proc
 
 ```
 pending → processing → success
+                     → partial_success  (some pages failed)
                      → failed
 ```
 
@@ -81,6 +87,15 @@ Serves the Markdown file as a download with:
 
 Returns 404 if the task is not in `success` status or the file is missing.
 
+## Download PDF (GET `/download-pdf/<pk>/`)
+
+Serves the original uploaded PDF as a download with:
+
+- `Content-Type: application/pdf`
+- `Content-Disposition: attachment; filename="<original-filename>"`
+
+Returns 404 if the PDF file is missing. Available for any task that has an uploaded PDF (any status).
+
 ## History Page (GET `/history/`)
 
 Lists all `ConversionTask` records ordered by creation date (newest first). Each row shows:
@@ -91,7 +106,7 @@ Lists all `ConversionTask` records ordered by creation date (newest first). Each
 - Processing time
 - Vision backend
 - Date created
-- Action links (View, Download, Progress, or Details depending on status)
+- Action links: **PDF** (download original PDF), plus View, Download, Progress, or Details depending on status
 
 ## Admin
 

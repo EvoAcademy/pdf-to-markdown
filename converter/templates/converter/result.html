@@ -9,18 +9,14 @@
     <div>
       <h1 class="text-2xl font-bold text-gray-900">{{ task.original_filename }}</h1>
       <div class="flex flex-wrap items-center gap-3 mt-1 text-sm text-gray-500">
-        {% if task.status == "success" %}
-          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800">
-            Success
-          </span>
-        {% elif task.status == "failed" %}
-          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800">
-            Failed
-          </span>
+        {% if task.effective_status == "success" %}
+          {% include "converter/_status_badge.html" with status=task.effective_status label="Success" %}
+        {% elif task.effective_status == "partial_success" %}
+          {% include "converter/_status_badge.html" with status=task.effective_status label="Partially OK" %}
+        {% elif task.effective_status == "failed" %}
+          {% include "converter/_status_badge.html" with status=task.effective_status label="Failed" %}
         {% else %}
-          <span class="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
-            {{ task.get_status_display }}
-          </span>
+          {% include "converter/_status_badge.html" with status=task.effective_status label=task.get_status_display %}
         {% endif %}
 
         {% if task.page_count %}
@@ -37,28 +33,41 @@
       </div>
     </div>
 
-    {% if task.status == "success" and task.markdown_file %}
-    <a href="{% url 'converter:download' pk=task.pk %}"
-       class="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white font-semibold
-              rounded-lg shadow-sm hover:bg-indigo-700 transition-colors text-sm">
-      <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
-              d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
-      </svg>
-      Download .md
-    </a>
-    {% endif %}
+    <div class="inline-flex items-center gap-2">
+      {% if task.pdf_file %}
+      <a href="{% url 'converter:download_pdf' pk=task.pk %}"
+         class="inline-flex items-center gap-2 px-5 py-2.5 bg-white border border-gray-300 text-gray-700 font-semibold
+                rounded-lg shadow-sm hover:bg-gray-50 transition-colors text-sm">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z"/>
+        </svg>
+        Download PDF
+      </a>
+      {% endif %}
+      {% if task.markdown_file and task.effective_status != "failed" %}
+      <a href="{% url 'converter:download' pk=task.pk %}"
+         class="inline-flex items-center gap-2 px-5 py-2.5 bg-indigo-600 text-white font-semibold
+                rounded-lg shadow-sm hover:bg-indigo-700 transition-colors text-sm">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+          <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4"/>
+        </svg>
+        Download .md
+      </a>
+      {% endif %}
+    </div>
   </div>
 
-  {% if task.status == "failed" %}
+  {% if task.effective_status == "failed" %}
   <!-- Error -->
   <div class="bg-red-50 border border-red-200 rounded-xl p-6">
     <h2 class="text-lg font-semibold text-red-800 mb-2">Processing Failed</h2>
-    <p class="text-sm text-red-700 whitespace-pre-wrap">{{ task.error_message }}</p>
+    <p class="text-sm text-red-700 whitespace-pre-wrap">{{ task.effective_error_message }}</p>
   </div>
   {% endif %}
 
-  {% if task.status == "success" and markdown_html %}
+  {% if markdown_html %}
   <!-- Tab switcher -->
   <div class="bg-white rounded-xl shadow-sm border border-gray-200 overflow-hidden">
     <div class="border-b border-gray-200">
